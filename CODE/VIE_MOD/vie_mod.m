@@ -156,8 +156,6 @@
 %   13 Sep 2017 by D. Landskron: 'tropSource' shifted into 'vie_init' 
 %   11 May 2018 by D. Landskron: bug with usage of raytr-files corrected
 %   05 Jul 2018 by D. Landskron: vm1 renamed to vmf1 and VMF3 added to the troposphere models 
-%   27 Jul 2019 by D. Landskron: zwet parameter added to scan structure
-%   15 Jan 2020 by M. Mikschi: gravitational deformation correction added
 %
 % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 %  NOTATION:
@@ -187,6 +185,7 @@ end
 if flag_save_results
 	i_result = 0;
 end
+
 
 % Select dealy model for quasars:
 %   1 = Consensus model (standard in VLBI)
@@ -300,7 +299,6 @@ obs_type_s_ind = strcmp({scan.obs_type}, 's');
 if sum(obs_type_q_ind) ~= 0
     RA2000(obs_type_q_ind)          = deal([sources.q([scan(obs_type_q_ind).iso]).ra2000]);
     DE2000(obs_type_q_ind)          = deal([sources.q([scan(obs_type_q_ind).iso]).de2000]);
-
     if strncmpi('icrf3',parameter.vie_init.crf(2),5) && (del_mod_q ~= 3)
         [DE2000, RA2000] = correct_GA(DE2000,RA2000,mean([scan(:).mjd]));
         fprintf(1, 'ICRF3 is used --> GA will be corrected to 2015 using 5.8 muas/year\n');
@@ -320,10 +318,27 @@ MJD         = ([scan.mjd])';                % time of observations MJD UT
 LEAP        = tai_utc(MJD);                 % get difference TAI-UTC [s]
 TT          = MJD + (32.184 + LEAP)./86400; % [MJD TT]
 
+% Read GNSS-based ZTD to be used as a priori value
+flagGNSS=0;
 
+if flagGNSS == 1
+    deltaMJD=MJD(end)-MJD(1);
+    if deltaMJD*86400 < 7200
+        sestype='INT';
+    else
+        deltaMJDint=floor(MJD(end))-floor(MJD(1));
+        if deltaMJDint == 1
+            sestype='NOINT';
+        elseif deltaMJDint == 1
+            sestype='CONT';
+        end
+    end
+    sestype='CONT';
+    antenna = readTroGNSS (MJD(1), antenna, sestype);
+end
 
-% �������������������������� 
-% �  1. EARTH ORIENTATION  �
+% ��������������������������
+% �  1. EARTH ORIENTATION                                                �
 % ��������������������������
 
 % -------------------------------------------------
@@ -691,17 +706,14 @@ end
 GA=5.8; %[uas/y]
 RAGC = (17+45/60+40/3600)/12*pi; %[rad] RA of Galactic center: 17h45min40sec
 DeGC = (-29-28/3600)/180*pi;   %[rad]  De of Galactic center: -29deg 00min 28sec
-
 % num of sec in one year
 GA_T = 60*60*24*365.25;
 % conversion rad -> as
 GA_k=180/pi*60*60 *GA_T; % as*s
 accMag = GA* 1e-6 *c  / GA_k ; % m/s^2 magnitude of acceleration (~ 2.44e-10 m/s^2)
-
 acc=[accMag*cos(RAGC)*cos(DeGC)
      accMag*sin(RAGC)*cos(DeGC)
      accMag*sin(DeGC)]; %m/sec^2
-
 
 
 
@@ -716,7 +728,6 @@ cpsd_all = cPostSeismDeform(MJD,antenna); % [3 x nScans x nStat] matrix / meters
 if strcmpi(parameter.vie_init.zhd,'gpt3')   ||   strcmpi(parameter.vie_init.zwd,'gpt3')   ||   strcmpi(parameter.vie_mod.mfh,'gpt3')   ||   strcmpi(parameter.vie_mod.mfw,'gpt3')   ||   strcmpi(parameter.vie_mod.apgm_h,'gpt3')   ||  strcmpi(parameter.vie_mod.apgm_w,'gpt3')
     cell_grid_GPT3 = gpt3_5_fast_readGrid;
 end
-
 % GRAVITATIONAL DEFORMATION
 % check if the antenna struct has a field for gravitational deformation. It
 % might have been created with an older version of vie_init. If not warn
@@ -796,20 +807,23 @@ for isc = 1:number_of_all_scans
     % recommended for implementation of ocean tidal loading in IERS
     % Conventions 2010.
     [cto_F, cto_P, cto_TAMP, cto_IDD1] = libiers_tdfrph_call(mjd, leap);
-
+    
     % reference epoch for SSB acceleration
     refep_accSSB = 57023; % 2015.0
     delt_accSSB  = (mjd - refep_accSSB) * 86400; % time since ref epoch in sec
- 
+    
     % ***********************
     %  loop over stations in current scan
     % ***********************
     for i_stat = 1 : length(scan(isc).stat)
         
+
+        
         % Choose only active stations in the scan:
         if ~isempty(scan(isc).stat(i_stat).temp)
             ant = ANT(i_stat,:);
             vel = VEL(i_stat,:);
+            
             
             % Solid Earth Tide corrections
             cts = [0 0 0];
@@ -824,6 +838,10 @@ for isc = 1:number_of_all_scans
                     [cts] = mathews(mjd, leap, t2c, ant, moon, sun);
                 end
             end
+            
+%             aux=cts;
+%             drenaux = xyz2ren(aux, PHI(i_stat), LAM(i_stat));
+%             fprintf(fid,'%.3f ', drenaux(1));
             
             % Tidal Ocean Loading corrections
             cto = [0 0 0];
@@ -913,7 +931,8 @@ for isc = 1:number_of_all_scans
                     ctpm = parameter.vie_mod.ctpm; % mean: linear or cubic
                     [ctop, flgm_ctp] = ctoceanpole(tim, ant, xp, yp, opl, ctpm);
                 end
-            end
+            end    
+
             
             % Seasonal variations of station positions
             % (zero a priori; only partial derivatives w.r.t. amplitudes are build up)
@@ -945,7 +964,8 @@ for isc = 1:number_of_all_scans
             % store results per scan & station
             scan(isc).stat(i_stat).x      = ant_trs; % corrected station position in TRS [x,y,z]
             scan(isc).stat(i_stat).xcrs   = ant_crs; % corrected station position in CRS [x,y,z]
-            
+            scan(isc).stat(i_stat).cposit = cposit;
+                      
             scan(isc).stat(i_stat).pAcr_xyz = pAcr_xyz; % [-] partials for cosine Ampl. - seasonal stat. position variations
             scan(isc).stat(i_stat).pAce_xyz = pAce_xyz; % [-]
             scan(isc).stat(i_stat).pAcn_xyz = pAcn_xyz; % [-]
@@ -1210,21 +1230,21 @@ for isc = 1:number_of_all_scans
                         % calculation of the time delay following the consensus model
                         % + Titov 2011
                         % ------------------------------------------------------------
-
+                        
                         %(1) barycentric station vector (eq. 6)
                         xb1 = earth + stat_1_gcrs;
                         xb2 = earth + stat_2_gcrs;
-
+                        
                         %(2)&(3) differential gravitational delay due to celestial bodies
                         [Tgrav, pGammaSun] = grav_delay(xb1,xb2,vearth,b_gcrs,rqu,ephem,isc,opt);
-
+                        
                         %(4) differential gravitational delay due to the earth
                         Tgrave = 2*gme/c^3*...
                             log((norm(stat_1_gcrs)+rqu*stat_1_gcrs)/(norm(stat_2_gcrs)+rqu*stat_2_gcrs)); % (eq. 1)
-
+                        
                         %(5) total differential gravitational delay (eq. 2)
                         Tgrav = Tgrave + Tgrav;
-
+                        
                         %(6) vacuum delay
                         U     = gms/norm(sun); % gravitational potential at the geocenter
                         gamma = 1;
@@ -1234,9 +1254,8 @@ for isc = 1:number_of_all_scans
                         term2 = 1+(rqu*vearth)/(2*c);
                         quot  = 1+(rqu*(vearth+v2+acc*delt_accSSB))/c;
                         tau   = (Tgrav - fac1*term1 - fac2*term2)/quot;          %(eq. 9)
-
+                        
                         pGammaSun = pGammaSun/quot;
-
                         %(7) aberrated source vector (eq. 15)
                         k1a = rqu + (vearth+v1)'/c - rqu*((rqu*(vearth+v1))')/c;
                         k2a = rqu + (vearth+v2)'/c - rqu*((rqu*(vearth+v2))')/c;
@@ -1522,8 +1541,8 @@ for isc = 1:number_of_all_scans
                     flagmess.axtyp(stnum) = 1;
                 end
                 
-                
-                if strcmpi(parameter.vie_init.tropSource.name,'indModeling')   ||   isempty(scan(isc).stat(stnum).trop)
+                           
+                if strcmpi(parameter.vie_init.tropSource.name,'indModeling')  ||   isempty(scan(isc).stat(stnum).trop)
 
                     % TROPOSPHERE
                     
@@ -1552,7 +1571,7 @@ for isc = 1:number_of_all_scans
                         Tm     = antenna(stnum).gpt3.Tm;
                         lambda = antenna(stnum).gpt3.lambda;
                         zwet   = asknewet ( e , Tm , lambda );
-                    elseif strcmpi(parameter.vie_init.zwd,'vmf3')
+                     elseif strcmpi(parameter.vie_init.zwd,'vmf3')
                         zwet   = scan(isc).stat(stnum).zwdt;
                     elseif strcmpi(parameter.vie_init.zwd,'vmf1')
                         zwet   = scan(isc).stat(stnum).zwdt;
@@ -1561,6 +1580,9 @@ for isc = 1:number_of_all_scans
                         Tm     = antenna(stnum).gpt3.Tm;
                         lambda = antenna(stnum).gpt3.lambda;
                         zwet   = asknewet ( e , Tm , lambda );
+%                         fid=fopen('lam.txt','a+');
+%                         fprintf(fid,'%.3f %s %.3f %.3f %.3f %.3f\n',scan(isc).mjd,antenna(stnum).name,zwet, e, Tm ,lambda);
+%                         fclose(fid);
                     else
                         error('Something is wrong here...');
                     end
@@ -1666,8 +1688,6 @@ for isc = 1:number_of_all_scans
                     aprgrd = aprgrd_h+aprgrd_w;   % [m]
                     a_ngr(stnum) = a_ngr_h(stnum) + a_ngr_w(stnum);   % [m]
                     a_egr(stnum) = a_egr_h(stnum) + a_egr_w(stnum);   % [m]
-
-                    
                 
                     % Antenna axis offset altitude correction
                     aoalt = 0;
@@ -1677,16 +1697,72 @@ for isc = 1:number_of_all_scans
                        aoalt = -zdry*(axkt*c/DTSH)*psifac; %[m]
                     end
                     
+                    if (flagGNSS==1 && ~isempty(antenna(stnum).gnsscrd))
+                        dist=norm(antenna(stnum).gnsscrd-scan(isc).stat(stnum).x);
+                    end
                     
-                    % store in scan
-                    scan(isc).stat(stnum).mfw   = mfw;   % used in vie_lsm as partial
-                    scan(isc).stat(stnum).zdry  = zdry;
-                    scan(isc).stat(stnum).zwet  = zwet;
-                    scan(isc).stat(stnum).aoalt   = aoalt; % antenna axis offset altitude correction [m]                    
-                    scan(isc).stat(stnum).trop  = ((zdry+aoalt) * mfh + zwet * mfw + aprgrd)/c; % contains the whole (asymmetric) delay [sec]
+                    %If flagGNSS is enabled and there are GNSS-based ZTD
+                    %values
+                     if (flagGNSS==1 && ...
+                         ~isempty(antenna(stnum).gnsscode) && ...
+                         ~isempty(antenna(stnum).gnsscrd) && ...
+                         ~isempty(antenna(stnum).gnssztd) && ...
+                         dist < 400)
+
+                        %Correct GNSS coordinates for geophysical
+                        %displacements
+                        [~, ~, hellgnss] = xyz2ell(antenna(stnum).gnsscrd+scan(isc).stat(stnum).cposit);
+                        
+                        %Add eccentricity
+                        hellgnss = hellgnss + antenna(stnum).gnssuecc;
+                        
+                        % Compute height correction
+                        %[deltazdry,deltazwet]=trop_height_corr(scan(isc).stat(stnum).temp,scan(isc).stat(stnum).e,scan(isc).stat(stnum).pres, phi,hell,hellgnss);
+                        [deltazdry,deltazwet]=trop_height_corr(scan(isc).stat(stnum).temp,antenna(stnum).gpt3.e,scan(isc).stat(stnum).pres, phi,hell,hellgnss);
+                        %Interpolate linearly ZTD and gradients to the observation
+                        %epoch
+                        ztdgnss = interp1(antenna(stnum).gnssztd(:,1),antenna(stnum).gnssztd(:,2),mjd,'linear','extrap');
+                        grn = interp1(antenna(stnum).gnssztd(:,1),antenna(stnum).gnssztd(:,3),mjd,'linear','extrap');
+                        gre = interp1(antenna(stnum).gnssztd(:,1),antenna(stnum).gnssztd(:,4),mjd,'linear','extrap');
+                        %compute GNSS derived zwet delay
+%                         auxzwet=zwet;
+%                         auxzwet2=zwet2;
+%                         auxaprgrd=aprgrd;
+                        zwet = ztdgnss-(deltazdry+deltazwet+zdry);
+                        %Compute apriori gradients
+                        aprgrd = 1/(sin(pi/2-zd)*tan(pi/2-zd)+0.0032)*(grn*cos(azim)+gre*sin(azim));
+                      
+                        % store in scanp
+                        scan(isc).stat(stnum).mfw   = mfw;   % used in vie_lsm as partial
+                        scan(isc).stat(stnum).zdry  = zdry; %this value is used to write the SINEX file: ZTD=zdry a priori+zwd
+                        scan(isc).stat(stnum).aoalt   = aoalt; % antenna axis offset altitude correction [m]
+                        scan(isc).stat(stnum).trop  = ((zdry+aoalt) * mfh + zwet * mfw + aprgrd)/c; % contains the whole (asymmetric) delay [sec]
+                        scan(isc).stat(stnum).zwet  = zwet;
+
+%                         fid=fopen('debug4.txt','a+');
+%                         fprintf(fid,'GNSS %s  %.3f %.3f %.4f %.4f\n',antenna(stnum).gnsscode, mjd, dist, scan(isc).stat(stnum).zwet, aprgrd);
+%                         fclose(fid);
+
+
+
+                        fid=fopen('debugVGOS.txt','a+');
+                        fprintf(fid,'GNSS %s  %.4f %.4f %.4f %.4f %.4f %.4f %.4f\n',antenna(stnum).gnsscode, mjd, dist, hell,hellgnss,antenna(stnum).gnssuecc, deltazdry,deltazwet);
+                        fclose(fid);
+                    else
+                        % store in scan
+                        scan(isc).stat(stnum).mfw   = mfw;   % used in vie_lsm as partial
+                        scan(isc).stat(stnum).zdry  = zdry;
+                        scan(isc).stat(stnum).zwet  = zwet;
+                        scan(isc).stat(stnum).aoalt   = aoalt; % antenna axis offset altitude correction [m]
+                        scan(isc).stat(stnum).trop  = ((zdry+aoalt) * mfh + zwet * mfw + aprgrd)/c; % contains the whole (asymmetric) delay [sec]
+
+%                         fid=fopen('debug4.txt','a+');
+%                         fprintf(fid,'noGNSS %s  %.3f\n',antenna(stnum).name, mjd);
+%                         fclose(fid);
+
+                    end
  
                 end 
-                
                 
                 % THERMAL DEFORMATION (Haas et al.,1998; Skurihina 2000)
                 if parameter.vie_mod.therm == 1
@@ -1714,7 +1790,6 @@ for isc = 1:number_of_all_scans
                 else
                     gravdef_corr = 0;
                 end
-                
                 % store in scan
                 scan(isc).stat(stnum).axkt  = axkt;
                 scan(isc).stat(stnum).therm = therm_d;
@@ -1725,6 +1800,9 @@ for isc = 1:number_of_all_scans
 
                 
             end % if zd is empty
+%             fid=fopen('tau4.txt','a+');
+%             fprintf(fid,'%d %d %d %.3f %s %.3f %.3f %.3f %.3f %.3f %.3f ',isc,stnum, scan(isc).iso, scan(isc).mjd,antenna(stnum).name,scan(isc).stat(stnum).trop*c,scan(isc).stat(stnum).zwet,scan(isc).stat(stnum).mfw,scan(isc).stat(stnum).zdry,scan(isc).stat(stnum).aoalt, scan(isc).stat(stnum).zd*180/pi);
+%             fclose(fid);
         end % kstat 1:2
         
         %(8) add geometric part of tropospheric propagation delay
@@ -1746,6 +1824,9 @@ for isc = 1:number_of_all_scans
         
         %(9) total delay
         c_trop = atm2 - atm1;
+%         fid=fopen('tau4.txt','a+');
+%         fprintf(fid,'%.3f\n',c_trop*c);
+%         fclose(fid);
         tau    = tau + c_trop; %(eq. 12)
         
         % further corrections:
@@ -1757,7 +1838,6 @@ for isc = 1:number_of_all_scans
         
         % gravitational deformation correction
         c_gravdef = scan(isc).stat(stat_2_id).gravdef - scan(isc).stat(stat_1_id).gravdef; % [sec]
-        
         % add
         tau = c_axis + c_therm + c_gravdef + tau; % [sec]
         
