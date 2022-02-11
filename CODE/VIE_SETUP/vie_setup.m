@@ -350,7 +350,7 @@ else
     set(handles.popupmenu_parameters_statCorr_hydroLoading, 'String', {dirsInHydloFolder.name});
 end
 set(handles.popupmenu_parameters_eop_aPriori_other, 'String', {dirsInEopFolder.name})
-set(handles.popupmenu_parameters_eop_oceanTideModel, 'String', ['interpf (Conventions)', {dirsInEophfFolder.name}, 'Combi_IGG_Bonn'])
+set(handles.popupmenu_parameters_eop_oceanTideModel, 'String', [{dirsInEophfFolder.name},'interpf (Conventions)','Combi_IGG_Bonn'])
 set(handles.popupmenu_plot_folder1_subfolder, 'String', ['/', {dirsInDataFolder.name}])
 set(handles.popupmenu_plot_folder2_subfolder, 'String', ['/', {dirsInDataFolder.name}])
 set(handles.popupmenu_plot_folder3_subfolder, 'String', ['/', {dirsInDataFolder.name}])
@@ -529,17 +529,28 @@ RGB = cat(3,R,G,B);
 imshow(RGB)
 
 try
-    [status,out] = system('git rev-parse --short HEAD');
-    if status == 0 && length(out) == 8
-        handles.text_version.String = sprintf('v3.1 (%s)',strtrim(out));
+    [status_hash,hash] = system('git rev-parse --short HEAD');
+    hash = strtrim(hash);
+    [status_tag,tag] = system('git describe --abbrev=0');
+    tag = strtrim(tag);
+    
+    if status_tag == 0 && length(tag)>1
+        f = gcf;
+        f.Name = sprintf('Vienna VLBI and Satellite Software %s',tag);
+    end
+    
+    if status_hash == 0 && status_tag== 0 && length(tag) > 1 && length(hash) == 7
+        handles.text_version.String = sprintf('%s (%s)',tag, hash);
+    elseif status_hash == 0 && length(hash) == 7
+        handles.text_version.String = sprintf('%s', hash);
+    elseif status_tag == 0 && length(tag) > 1
+        handles.text_version.String = sprintf('%s',tag);
     else
-        handles.text_version.String = 'v3.1';
+        handles.text_version.String = 'no git';
     end
 catch
-    handles.text_version.String = 'v3.1';
+    handles.text_version.String = 'no git';
 end
-
-
 
 % Choose default command line output for vie_setup
 handles.output = hObject;
@@ -2550,6 +2561,37 @@ end
 
 % save parameter file automatically 
 auto_save_parameterfile(hObject, handles)
+
+
+% --- Executes on button press in checkbox_estimation_leastSquares_clocksBasDepOffset.
+function checkbox_estimation_leastSquares_clocksBasDepOffset_Callback(hObject, eventdata, handles)
+% hObject    handle to checkbox_estimation_leastSquares_clocksBasDepOffset (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkbox_estimation_leastSquares_clocksBasDepOffset
+
+% set enabling
+if get(hObject, 'Value')
+    if get(handles.checkbox_setInput_useOptFiles, 'Value')
+        set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'on');
+    end
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_automatic, 'Enable', 'on');
+    set(handles.edit_estimation_leastSquares_clockBasDepO_minNobs, 'Enable', 'on');
+    set(handles.text403, 'Enable', 'on');
+    set(handles.text404, 'Enable', 'on');
+else
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'off');
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_automatic, 'Enable', 'off');
+    set(handles.edit_estimation_leastSquares_clockBasDepO_minNobs, 'Enable', 'off');
+    set(handles.text403, 'Enable', 'off');
+    set(handles.text404, 'Enable', 'off');
+
+end
+
+% save parameter file automatically 
+auto_save_parameterfile(hObject, handles)
+
 
 
 % --- Executes on button press in checkbox_estimation_leastSquares_clocksRelConstr.
@@ -5265,7 +5307,7 @@ unitPerParam={'pwclk', 'cm'; 'rclk', 'cm/day'; 'qclk', 'cm/(day^2)'; ...
     'rqclk', 'cm/(day^2) warning: rate+quadr'; 'zwd', 'cm'; 'ngr', 'cm'; 'egr', 'cm';...
     'xpol', 'mas'; 'ypol', 'mas'; 'dut1', 'ms'; 'nutdx', 'mas'; 'nutdy',...
     'mas'; 'coorx', 'cm'; 'coory', 'cm'; 'coorz', 'cm'; 'soude', 'mas'; 'soura', 'mas';...
-    'sat_pos1', 'cm'; 'sat_pos2', 'cm'; 'sat_pos3', 'cm'};
+    'sat_pos1', 'cm'; 'sat_pos2', 'cm'; 'sat_pos3', 'cm'; 'scale', 'ppb'; 'bdclko','cm'};
 % get selected parameter
 allParamInPopupmenu=get(eval(['handles.popupmenu_plot_folder', num2str(chosenPanel), '_param']), 'String');
 curSelParam=allParamInPopupmenu{get(eval(['handles.popupmenu_plot_folder', num2str(chosenPanel), '_param']), 'Value')};
@@ -7995,7 +8037,7 @@ if get(handles.checkbox_global_param_tidERPvar, 'Value')
     parGS(curStructInd+1).id = 1; 
 end
 
-% save paramter and paths for global solution and 
+% save parameter and paths for global solution and 
 save('../DATA/GLOB/parGS.mat', 'parGS')
 save('../DATA/GLOB/pathGS.mat', 'pathGS')
 
@@ -9577,6 +9619,7 @@ function radiobutton_parameters_troposphere_indModeling_Callback(hObject, eventd
 % Hint: get(hObject,'Value') returns toggle state of radiobutton_parameters_troposphere_indModeling
 
 % set en/disable
+set(handles.radiobutton_parameters_troposphere_zhd_no, 'Enable', 'on')
 set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Enable', 'on')
 set(handles.radiobutton_parameters_troposphere_zhd_VMF3, 'Enable', 'on')
 set(handles.radiobutton_parameters_troposphere_zhd_VMF1, 'Enable', 'on')
@@ -9612,6 +9655,7 @@ function radiobutton_parameters_troposphere_raytr_Callback(hObject, eventdata, h
 % Hint: get(hObject,'Value') returns toggle state of radiobutton_parameters_troposphere_raytr
 
 % set en/disable
+set(handles.radiobutton_parameters_troposphere_zhd_no, 'Enable', 'off')
 set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Enable', 'off')
 set(handles.radiobutton_parameters_troposphere_zhd_VMF3, 'Enable', 'off')
 set(handles.radiobutton_parameters_troposphere_zhd_VMF1, 'Enable', 'off')
@@ -9651,7 +9695,16 @@ set(handles.radiobutton_parameters_troposphere_gradients_w_no, 'Enable', 'Off')
 set(handles.radiobutton_parameters_troposphere_gradients_w_GRAD, 'Enable', 'Off')
 set(handles.radiobutton_parameters_troposphere_gradients_w_GPT3, 'Enable', 'Off')
 
+% --- Executes on button press in radiobutton_parameters_eop_interp_lin.
+function radiobutton_parameters_eop_interp_lin_Callback(hObject, eventdata, handles)
+% hObject    handle to radiobutton_parameters_eop_interp_lin 
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
+% Hint: get(hObject,'Value') returns toggle state of radiobutton_parameters_eop_interp_lin
+
+% set en/disable
+set(handles.checkbox_parameters_eop_interp_lin48h, 'Enable', 'On')
 
 
 % --- Executes on selection change in popupmenu_plot_sessionAnalysis_subfolder2.
@@ -10459,8 +10512,12 @@ function checkbox_setInput_useOptFiles_Callback(hObject, eventdata, handles)
 % Enable/Disable popupmenu to select the OPT file
 if get(handles.checkbox_setInput_useOptFiles, 'Value') == 0
     set(handles.popupmenu_setInput_optDir, 'Enable', 'off')
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'off')
 else
     set(handles.popupmenu_setInput_optDir, 'Enable', 'on')
+    if get(handles.checkbox_estimation_leastSquares_clocksBasDepOffset, 'Value')
+        set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'on')
+    end
 end
 
 auto_save_parameterfile(hObject, handles)

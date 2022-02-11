@@ -226,6 +226,9 @@ clean_opt.clk_break.mjd         = []; % Clock break epochs
 clean_opt.stat_dw       = ''; % Downweight stations
 clean_opt.no_cab        = ''; % Cable cal
 
+clean_opt.bdco_est.sta1 = '';
+clean_opt.bdco_est.sta2 = '';
+
 clean_opt.scan_excl     = []; % Outliers
 
 parameter.opt.options = clean_opt; % Init
@@ -341,7 +344,7 @@ if parameter.outlier.flag_remove_outlier
         [parameter.outlier.obs2remove] = readOUT(outlier_filename_path);
         fprintf('%d outliers will be removed:\n',size(parameter.outlier.obs2remove,2));        %%%=> A. Girdiuk 2015-07-21
         for k=1:size(parameter.outlier.obs2remove,2)
-            fprintf(' - %8s %8s %5.2f\n', parameter.outlier.obs2remove(k).sta1, parameter.outlier.obs2remove(k).sta2, parameter.outlier.obs2remove(k).mjd);
+            fprintf(' - %8s %8s %5.2f %8s\n', parameter.outlier.obs2remove(k).sta1, parameter.outlier.obs2remove(k).sta2, parameter.outlier.obs2remove(k).mjd, parameter.outlier.obs2remove(k).sou);
         end
     else
         fprintf('Outlier list not available: %s\n', outlier_filename_path);
@@ -374,9 +377,21 @@ if (parameter.lsmopt.min_num_obs_per_est_source > 1) && (parameter.lsmopt.pw_sou
 end
 
 
-fprintf('1. LOADE AND PREPARE DATA\n');
+fprintf('1. LOAD AND PREPARE DATA\n');
 
 opt = parameter.lsmopt;
+
+% to ensure compatibility with parameter files before the vievs update (10/2020)
+% where the estimation of scale offset was added. Can be removed in the future!
+if ~isfield(parameter.lsmopt, 'est_scale') 
+    opt.est_scale=0;
+end
+
+% to ensure compatibility with parameter files before the vievs update (10/2020)
+% where the bas-dep clock offsets were added. Can be removed in the future!
+if ~isfield(parameter.lsmopt, 'est_bdco') 
+   opt.est_bdco=0; 
+end
 
 if opt.addSnxSource==1
     opt.est_source=1;
@@ -666,7 +681,7 @@ fprintf('5. FORMING THE DESIGN MATRICES "A(i).sm" ...\n' );
 % -------------------------------------------------------------------------
 % FORMING THE DESIGN MATRICES OF THE REAL OBSERVATIONS ([A1clk A2clk A3zwd])
 % SUBROUTINES THAT ARE USED "stwisepar","apwq_clk","apw_zwd"
-number_of_estimated_parameters = 18;
+number_of_estimated_parameters = 20;
 sum_.clk(1)     = 0;
 sum_.qclk(1)    = 0;
 sum_.zwd(1)     = 0;
@@ -939,6 +954,28 @@ A(10).sm = Apwnutdy; H(10).sm = Hnutdy; Ph(10).sm = Phnutdy; och(10).sv = oc_hnu
 
 clear Apwxpol Apwypol Apwdut1 Apwnutdx Apwnutdy
 
+
+%  Correction to the scale factor
+if opt.est_scale==1
+    for n_obs_per_src = 1 : n_observ
+        % assigning observationwise partial derivatives
+        A(19).sm(n_obs_per_src,1) = temp(n_obs_per_src).pscale;  % [s] 
+        H(19).sm(1) = 0;
+        Ph(19).sm(1) = 0;
+    end
+end
+
+% Baseline dependent clock offset
+ebsl_bdco=[];
+if opt.est_bdco==1
+    [A_bdco,H_bdco,Ph_bdco,ebsl_bdco] = abdo_clk(scan,antenna,opt,n_observ,parameter);
+    A(20).sm = A_bdco;
+    H(20).sm = H_bdco;
+    Ph(20).sm = Ph_bdco;
+end
+parameter.lsmopt.bdco_nrlist = ebsl_bdco;
+
+%%
 fprintf('6. FORMING THE CONSTRAIN MATRIX and WEIGHT MATRIX OF CONSTRAINTS\n');
 
 % Constraints as pseudo observations - H, Ph, och
@@ -1179,7 +1216,13 @@ if ess == 1 % +hana 10Nov10
     opt.wrms = wrms;
 
     mi = repmat(mo,length(Qxx),1).*repmat(sqrt(diag(Qxx)),1,numberOfLSMs); % std. dev. of estimated parameters [cm,mas]
-
+    
+    % Covariance matrix a posteriori, Cvv = sigma_0^2 * Qvv, Qvv=Qll-Q~ll, Qll= inv(P), Q~ll=A*Qxx*A'
+    Qll = inv(Pobserv(1:n_observ,1:n_observ));
+    Qlldach = A(1:n_observ,:)*Qxx*A(1:n_observ,:)';
+    Qvv = Qll-Qlldach;
+    Cvv=mo^2*Qvv; 
+    sigma_residuals_aposteriori = sqrt(diag(Cvv));
 
     % Outlier test begins here
     % DETECTING OUTLIER
@@ -1213,7 +1256,7 @@ if ess == 1 % +hana 10Nov10
 
     % ##### Write outliers to ASCII file: #####
     if ~isempty(out_v)
-        out = write_outlier_file(out_v, antenna, scan, parameter);
+        out = write_outlier_file(out_v, antenna, scan, parameter, sources);
     end
 
     % ##### write residuals/outlier info to new variable #####
@@ -1278,6 +1321,8 @@ if ess == 1 % +hana 10Nov10
         % main solution residuals and outliers should be saved in any case
         res.mainVal = v_real;
         res.outlier = out_v;
+        res.sigma_from_fringe_fitting = mi_observ;
+        res.sigma_residuals_aposteriori = sigma_residuals_aposteriori;
 
 
         if ~isempty(dirpth) && ~exist(['../DATA/LEVEL3/',dirpth])
@@ -1316,12 +1361,19 @@ if ess == 1 % +hana 10Nov10
         fprintf('satellite pos. 2 offsets:                     %4d\n',dj(17));
         fprintf('satellite pos. 3 offsets:                     %4d\n',dj(18));
     end
+    if logical(opt.est_scale)
+        fprintf('scale parameter:                              %4d\n',dj(19));
+    end
+    if logical(opt.est_bdco)
+        fprintf('total baseline dependent clock offsets:       %4d\n',dj(20));
+    end
+
     fprintf('---------------------------------------------------------\n');
     fprintf('total number of estimated parameters:         %4d\n',sum_dj(end));
     fprintf('---------------------------------------------------------\n');
 
-        
-    [x_] = splitx(x,first_solution,mi,na,sum_dj,n_,mjd0,mjd1,t,T,opt,antenna,ns_q,nso,tso,ess, ns_s, number_pwlo_per_sat);
+    
+    [x_] = splitx(x,first_solution,mi,na,sum_dj,n_,mjd0,mjd1,t,T,opt,antenna,ns_q,nso,tso,ess, ns_s, number_pwlo_per_sat, ebsl_bdco);
     x_.mo = mo;
     x_.mo_first = first_solution.mo;
     x_.units.mo = 'chi of main solution vTPv/degOfFreedom [] (NOT SQUARED!)';
@@ -1395,8 +1447,13 @@ end
 % columns in the N and b and the time information
 
 if opt.global_solve == 1 || opt.ascii_snx ==1 % +hana 05Oct10
+    if opt.est_scale == 1 % estimate scale
+        fprintf('\nWe are sorry, but currently it is not possible to create the sinex file or glob data if the scale is estimated!\n\n')
+        return
+    end
 
-    [x_] = splitx(x,first_solution,mi,na,sum_dj,n_,mjd0,mjd1,t,T,opt,antenna,ns_q,nso,tso,ess, ns_s, number_pwlo_per_sat);
+
+    [x_] = splitx(x,first_solution,mi,na,sum_dj,n_,mjd0,mjd1,t,T,opt,antenna,ns_q,nso,tso,ess, ns_s, number_pwlo_per_sat, ebsl_bdco);
 
     glob_dj = dj;
 
@@ -1738,7 +1795,7 @@ if opt.ascii_snx == 1
 
 
     outsnx=opt.outsnx;
-    [col_red col_est] = snx_split(x_,outsnx);
+    [col_red, col_est] = snx_split(x_,outsnx);
 
     % remove constraints of parameters which will be written into SINEX file
     sA=[];
@@ -1798,21 +1855,20 @@ if opt.ascii_snx == 1
     [N_sinex, b_sinex]=snx_changeunits(N_sinex,b_sinex,col_sinex,outsnx);
 
 
-    %%
-
-    if exist(['../DATA/LEVEL3/',dirpth,'/SINEX/'])~=7
-        mkdir(['../DATA/LEVEL3/',dirpth,'/SINEX/'])
-    end
-
-    fprintf('\nReduced N and b for SINEX output are saved in ../VieVS/DATA/LEVEL3/%s/SINEX/ \n',dirpth);
-    save(['../DATA/LEVEL3/',dirpth,'/SINEX/N_sinex_',parameter.session_name,'.mat'],'N_sinex');
-    save(['../DATA/LEVEL3/',dirpth,'/SINEX/b_sinex_',parameter.session_name,'.mat'],'b_sinex');
-    save(['../DATA/LEVEL3/',dirpth,'/SINEX/col_sinex_',parameter.session_name,'.mat'],'col_sinex');
+%%% Saving of variables commented by S. Boehm (slows the processing and uses a lot of disk space)
+%     if exist(['../DATA/LEVEL3/',dirpth,'/SINEX/'])~=7
+%         mkdir(['../DATA/LEVEL3/',dirpth,'/SINEX/'])
+%     end
+% 
+%     fprintf('\nReduced N and b for SINEX output are saved in ../VieVS/DATA/LEVEL3/%s/SINEX/ \n',dirpth);
+%     save(['../DATA/LEVEL3/',dirpth,'/SINEX/N_sinex_',parameter.session_name,'.mat'],'N_sinex');
+%     save(['../DATA/LEVEL3/',dirpth,'/SINEX/b_sinex_',parameter.session_name,'.mat'],'b_sinex');
+%     save(['../DATA/LEVEL3/',dirpth,'/SINEX/col_sinex_',parameter.session_name,'.mat'],'col_sinex');
 
     % create an ascii sinex file in DATA/SNX
     fprintf('\nWriting SINEX file ... \n');
-    write_sinex_vievs(parameter.session_name, [dirpth '/'], outsnx.firstname, outsnx.lastname, outsnx.email, outsnx.suffix);
-
+    write_sinex_vievs(parameter.session_name, [dirpth '/'], outsnx.firstname, outsnx.lastname, outsnx.email, outsnx.suffix,...
+                      N_sinex,b_sinex,col_sinex); % vars are loaded to the function directly -> saving uses disk space needlessly
 end
 
 

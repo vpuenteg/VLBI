@@ -28,7 +28,12 @@ function pushbutton_plot_residuals_removeOutliers_Callback(hObject, eventdata, h
 % msgbox(sprintf('Not working yet!, But this button should remove %1.0f outliers', ...
 %     size(get(handles.data.plot.outlierMarksHandle, 'Ydata'), 2)), ':-)', 'warn');
 
-nSelOutliers=size(get(handles.data.plot.outlierMarksHandle, 'Ydata'), 2);
+% nSelOutliers=size(get(handles.data.plot.outlierMarksHandle, 'Ydata'), 1);
+if size(handles.data.plot.outlierMarksHandle,1)==1
+    nSelOutliers=1;
+else
+    nSelOutliers=size(handles.data.plot.outlierMarksHandle(1).XData,2);
+end
 % if no outlier was selected -> write messge box
 if nSelOutliers==0
     msgbox('No value was selected!', 'No value selected', 'warn');
@@ -41,7 +46,7 @@ else
         OUTLIERsubFolder=allPopupmenuEntriesOUTLIERfolder{get(handles.popupmenu_setInput_outDir, 'Value')};
     end
     % is user sure to remove outliers?
-    choice = questdlg(sprintf('Definately remove the %1.0f selected outliers?\nSelected (in File->Set Input Files) outlier subfolder: ''%s''', ...
+    choice = questdlg(sprintf('Definitely remove the %1.0f selected outliers?\nSelected (in File->Set Input Files) outlier subfolder: ''%s''', ...
         nSelOutliers, OUTLIERsubFolder), 'Sure?', ...
         'Yes','No','Yes');
     % Handle response
@@ -49,16 +54,70 @@ else
         case 'Yes'
             % get the OUTLIER filename
             % (2) year
-            firstPlottedMjd=handles.data.plot.res(get(handles.popupmenu_plot_residuals_session, 'Value')).mjd(1);
+            % firstPlottedMjd=handles.data.plot.res(get(handles.popupmenu_plot_residuals_session, 'Value')).mjd(1);
+            % get the year from session name - changed 7.12. S. Boehm
             
             % (3) session name
             chosenSessionInd=get(handles.popupmenu_plot_residuals_session, 'Value');
             allPopupmenuEntriesSessions=get(handles.popupmenu_plot_residuals_session, 'String');
+            session = allPopupmenuEntriesSessions{chosenSessionInd};
             
-            OUTfolder = ['../DATA/OUTLIER/', OUTLIERsubFolder, '/', num2str(mjd2date(firstPlottedMjd)), '/'];
+            % ##### Check, if the input dataset file followed the standard naming convention #####
+            % => YYMMMDDcc_Nnnn (c...alphabetic character, n...number)
+            flag_std_naming_convention = true;
+
+            % Total length = 14 char
+            if length(session) ~= 14
+                flag_std_naming_convention = false; 
+            end
+
+            if flag_std_naming_convention
+                % "_" at car. 10
+                if ~strcmp(session(10), '_')
+                    flag_std_naming_convention = false;
+                end
+                % first two characters are numbers:
+                [~, status_1] = str2num(session(1:2));
+                % char. 6+7 are numbers:
+                [~, status_2] = str2num(session(6:7));
+                % char. 12-14 are numbers:
+                [~, status_3] = str2num(session(12:14));
+                if ~(status_1 && status_2 && status_3)
+                    flag_std_naming_convention = false;
+                end
+            end
+
+            if flag_std_naming_convention
+                % ##### Standard naming convention is used for this session: #####
+
+                % Get the year from the session name:
+                if str2double(session(1:2)) > 75
+                    yearStr = ['19', session(1:2)];
+                else
+                    yearStr = ['20', session(1:2)];
+                end
+
+                
+            else
+                % ##### Non-Standard naming convention is used for this session: #####
+                % e.g. when using .vso input files
+                % => Get yearStr from the opt_ file!
+
+                % #### Load opt_ file from LEVEL 3 (sub-)directory: ####
+                % Get sub-dir.:
+                allSubfolders   = get(handles.popupmenu_plot_residuals_folder, 'string');
+                curSubfolder    = allSubfolders{get(handles.popupmenu_plot_residuals_folder, 'Value')};
+
+                % load opt_ file and get the year:
+                load(['../DATA/LEVEL3/', curSubfolder, '/opt_', session, '.mat']);
+                yearStr = opt_.year;
+
+            end
+            
+            OUTfolder = ['../DATA/OUTLIER/', OUTLIERsubFolder, '/', yearStr, '/'];
             OUTfilename = [allPopupmenuEntriesSessions{chosenSessionInd}, '.OUT'];
 
-            % Check is outlier folder exists => if not => create it!
+            % Check if outlier folder exists => if not => create it!
             if ~exist(OUTfolder, 'dir')
                 mkdir(OUTfolder);
             end
@@ -98,12 +157,24 @@ else
             
             % Selected Data (Outliers) in residuals plot window:
             outlierEpochsHours = get(handles.data.plot.outlierMarksHandle, 'XData');
-            if(length(outlierEpochsHours)>1)
+%             if(length(outlierEpochsHours)>1)
+%                 outlierEpochsHours = outlierEpochsHours{1};
+%             end
+            if size(outlierEpochsHours,1)>1
                 outlierEpochsHours = outlierEpochsHours{1};
+            else
+                outlierEpochsHours = outlierEpochsHours(1);
             end
+                
+            
             OutlierValues = get(handles.data.plot.outlierMarksHandle, 'YData');
-            if(length(OutlierValues)>1)
+%             if(length(OutlierValues)>1)
+%                 OutlierValues = OutlierValues{1};
+%             end
+            if(size(OutlierValues,1)>1)
                 OutlierValues = OutlierValues{1};
+            else
+                OutlierValues = OutlierValues(1);
             end
 
             % Conversion of x-values: "hours from session start" => "MJD": 
@@ -173,14 +244,20 @@ else
             % Get Station names:
             allStatNames=handles.data.plot.res(chosenSessionInd).allStatNames;
             
+            % Get Source names:
+            sourceIndices = handles.data.plot.res(chosenSessionInd).source(curValuesIndices,:);
+            sourceForXIndices = sourceIndices(xIndices, :);
+            outlierSourceInd = sourceForXIndices(yIndices, :);
+            allSourceNames=handles.data.plot.res(chosenSessionInd).allSourceNames; 
+            
 %             outlierBaselineInd=handles.data.plot.res(chosenSessionInd).baselineOfObs(curValuesIndices(...
 %                 get(handles.data.plot.outlierMarksHandle, 'XData'),:),:);
             
             % Assigne Station names to Station indices:
-            outlierBaselines=cell(size(outlierBaselineInd,1),2);
+            outlierBaselines=cell(size(outlierBaselineInd,1),3); 
             outlierBaselines(:,1)=allStatNames(outlierBaselineInd(:,1));
             outlierBaselines(:,2)=allStatNames(outlierBaselineInd(:,2));
-            
+            outlierBaselines(:,3)=allSourceNames(outlierSourceInd); 
            
             
 %% ##### WRITE DATA TO OUTLIER FILE #####
@@ -189,12 +266,12 @@ else
             fid=fopen([OUTfolder, OUTfilename], 'a');    % 'a' is OK for both append or create new for writing
             
             for iOutlier=1:size(outlierEpochs,1)
-                fprintf(fid, '%8s %8s %18.12f\n', outlierBaselines{iOutlier,1},...
-                    outlierBaselines{iOutlier,2}, outlierEpochs(iOutlier));
+                fprintf(fid, '%8s %8s %18.12f %8s\n', outlierBaselines{iOutlier,1},...
+                    outlierBaselines{iOutlier,2}, outlierEpochs(iOutlier), outlierBaselines{iOutlier,3});
                 
                 % TEST
-                fprintf(1, '%8s %8s %18.12f\n', outlierBaselines{iOutlier,1},...
-                    outlierBaselines{iOutlier,2}, outlierEpochs(iOutlier));
+                fprintf(1, '%8s %8s %18.12f %8s\n', outlierBaselines{iOutlier,1},...
+                    outlierBaselines{iOutlier,2}, outlierEpochs(iOutlier), outlierBaselines{iOutlier,3});
             end
             fclose(fid);
             

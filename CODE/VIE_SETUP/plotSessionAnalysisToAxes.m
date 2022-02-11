@@ -66,12 +66,18 @@ if get(handles.radiobutton_plot_sessionAnalysis_network, 'Value')
     lam=lam*180/pi;
     phi=phi*180/pi;
     
-    load coast
     handles.axes_plot_sessionAnalysis=...
-        axesm('MapProjection','giso','MeridianLabel','on','ParallelLabel','on');
+    axesm('MapProjection','giso','MeridianLabel','on','ParallelLabel','on');
     gridm on
     framem on
-    plotm(lat,long, 'Color',[0.6,0.6,0.6]);
+    % check if coast.mat is there, if not use coastlines.mat (from R2020b)
+    if exist('coast.mat','file')            
+      load coast
+      plotm(lat,long, 'Color',[0.6,0.6,0.6]);
+    else 
+      load coastlines
+      plotm(coastlat,coastlon, 'Color',[0.6,0.6,0.6]);
+    end
     hold on
     scatterm(phi,lam,70,'k','filled')
     textm(phi+2,lam+2,{antenna.name},'FontSize',10)
@@ -255,7 +261,7 @@ elseif get(handles.radiobutton_plot_sessionAnalysis_corMatrix, 'Value')
     collast = collast(end);
     
     % get parameters which may be plotted
-    posspar = {'pwclk'; 'rqclk'; 'zwd'; 'ngr'; 'egr'; 'xpol'; 'ypol'; 'dut1'; 'nutdx'; 'nutdy'; 'soura'; 'soude'; 'coorx'; 'coory'; 'coorz'; 'sat_pos1'; 'sat_pos2'; 'sat_pos3'}; 
+    posspar = {'pwclk'; 'rqclk'; 'zwd'; 'ngr'; 'egr'; 'xpol'; 'ypol'; 'dut1'; 'nutdx'; 'nutdy'; 'soura'; 'soude'; 'coorx'; 'coory'; 'coorz'; 'sat_pos1'; 'sat_pos2'; 'sat_pos3'; 'scale'; 'bdclko'}; 
     
     % get parameters which were extimated for current session
     parest=cell(length(posspar),1);

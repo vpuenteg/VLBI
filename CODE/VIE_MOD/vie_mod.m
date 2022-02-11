@@ -376,7 +376,7 @@ disp('Interpolate EOP values for observation epochs:')
 
 % subtraction of tidal variations (Defraigne and Smits) in dUT1 before interpolation:
 if parameter.vie_mod.tidalUT == 1
-    disp('remove tidal UT')
+%     disp('remove tidal UT')
     taiut    = tai_utc(MJDeop);
     MJDTTeop = MJDeop + (32.184 + taiut)/86400;
     %         UT1corr  = tver2000(MJDTTeop);  % [sec]
@@ -394,6 +394,23 @@ end
 if parameter.vie_mod.linear == 1
     disp('linear interpolation of EOP')
     parameter.eop.interp = 'linear';
+    if parameter.vie_mod.linear48h
+        disp('special linear interpolation for IVS SINEX submission with 48h EOP interval')
+        % find index of MJDeop that lies within the 48 hour estimation interval
+        midof48h = find(MJDeop==floor(min(MJD))+1);
+        % remove this midnight point from a priori time series
+        MJDeop(midof48h) = []; UT1eop(midof48h) = [];
+        XPeop(midof48h) = []; YPeop(midof48h) = []; 
+        dXeop(midof48h) = []; dYeop(midof48h) = [];
+
+        % store a priori values at EOP timesteps without the 24h midnight
+        parameter.eop.mjd(midof48h) =  [];
+        parameter.eop.xp(midof48h) =  [];
+        parameter.eop.yp(midof48h) =  [];
+        parameter.eop.ut1(midof48h) =  [];
+        parameter.eop.dX(midof48h) =  [];
+        parameter.eop.dY(midof48h) =  [];
+    end
     % A priori EOP values are determined with linear interpolation between
     % the value of midnight before and after observation time.
     % for a session from 18:00 to 18:00 this means, that there are 2 a
@@ -404,7 +421,8 @@ if parameter.vie_mod.linear == 1
     YP    = interp1(MJDeop, YPeop,MJD,'linear','extrap');
     DX    = interp1(MJDeop, dXeop,MJD,'linear','extrap');
     DY    = interp1(MJDeop, dYeop,MJD,'linear','extrap');
-    % Lagragne
+
+% Lagragne
 else % linear = 0
     disp('Lagrange interpolation of EOP')
     parameter.eop.interp = 'lagrange';
@@ -419,7 +437,7 @@ end
 
 % re-add tidal variation in dUT1 after interpolation:
 if parameter.vie_mod.tidalUT == 1
-    disp('re-add tidal UT')
+%     disp('re-add tidal UT')
     corrUT1 = rg_zont2(TT,par35);  % [sec]
     DUT1    = DUT1 + corrUT1;   % [sec]
 end
@@ -1552,6 +1570,8 @@ for isc = 1:number_of_all_scans
                     if strcmpi(parameter.vie_init.zhd,'in situ')
                         pres = scan(isc).stat(stnum).pres;  % [hPa]
                         zdry = 0.0022768*pres / (1-0.00266*cos(2*phi)-(0.28e-6*hell));   %[m]
+                    elseif strcmpi(parameter.vie_init.zhd,'no')
+                        zdry = 0;
                     elseif strcmpi(parameter.vie_init.zhd,'vmf3')
                         zdry = scan(isc).stat(stnum).zhdt;
                     elseif strcmpi(parameter.vie_init.zhd,'vmf1')
@@ -1779,6 +1799,7 @@ for isc = 1:number_of_all_scans
                     therm_d = 0;
                 end
                 
+                
                 % GRAVITATIONAL DEFORMATION
                 if isfield(parameter.vie_mod, 'gravDef') && ...
                          parameter.vie_mod.gravDef == 1 && ...
@@ -1786,7 +1807,20 @@ for isc = 1:number_of_all_scans
                         ~isempty(antenna(stnum).gravdef)                         
                     gravdef_data = antenna(stnum).gravdef;
                     gravdef_corr = spline(gravdef_data.ez_delay(:,1), gravdef_data.ez_delay(:,2), 90-rad2deg(zd));  % [ps]
+                    
                     gravdef_corr = gravdef_corr * 1e-12;  % [ps] --> [sec]
+                    
+                    
+                    % Exception for ONSALA60
+                    % elevation independent temperature term
+                    % delay_temp = (T-19C)*0.47 mm
+                    if strcmp(strtrim(antenna(stnum).name), 'ONSALA60')
+                        temp = scan(isc).stat(stnum).temp;
+                        delay_temp = (temp - 19) * 0.47 * 1e-3;  % [m]
+                        delay_temp = delay_temp / c;  % [m] --> [s]
+                        
+                        gravdef_corr = gravdef_corr + delay_temp;
+                    end                    
                 else
                     gravdef_corr = 0;
                 end
@@ -2116,9 +2150,8 @@ for isc = 1:number_of_all_scans
         scan(isc).obs(iobs).pShida   = pShida_bl;   % [cm] for Shida
         scan(isc).obs(iobs).pFCN     = pFCN_bl;     % [cm] for FCN
         scan(isc).obs(iobs).pacc     = pacc;        % dt/dacc SSB acceleration [sec^3/cm]
-        scan(isc).obs(iobs).pGamma   = pGammaSun;   % [sec]
-        
-        
+        scan(isc).obs(iobs).pGamma   = pGammaSun;   % [sec]       
+        scan(isc).obs(iobs).pscale   = -fac1;       % [sec] Correction to the scale factor
 
     if flag_save_results
         i_result = i_result + 1;

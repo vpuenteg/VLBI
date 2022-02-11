@@ -102,18 +102,19 @@ if ~isempty(parameter.opt.options.no_cab)
                     obsI2NoCab = find([scan(iS).obs.i2]==curI);
                     
                     % Remove cable calibration which was already applied in VIe_INIT when loading the observation file:
-                    for ionc = 1 : length(obsI1NoCab)
-                        scan(iS).obs(obsI1NoCab(ionc)).obs = scan(iS).obs(obsI1NoCab(ionc)).obs + curCab;
-                    end
-                    for ionc = 1 : length(obsI2NoCab)
-                        scan(iS).obs(obsI2NoCab(ionc)).obs = scan(iS).obs(obsI2NoCab(ionc)).obs - curCab;
+                    if ~isempty(curCab)
+                        for ionc = 1 : length(obsI1NoCab)
+                            scan(iS).obs(obsI1NoCab(ionc)).obs = scan(iS).obs(obsI1NoCab(ionc)).obs + curCab;
+                        end
+                        for ionc = 1 : length(obsI2NoCab)
+                            scan(iS).obs(obsI2NoCab(ionc)).obs = scan(iS).obs(obsI2NoCab(ionc)).obs - curCab;
+                        end
                     end
 
                     % set cable cal to zero!
                     scan(iS).stat(curI).cab = 0;
                 end
             end
-            
         end
     end
 end
@@ -273,11 +274,14 @@ if ~isempty(parameter.opt.options.sour_excl)
         % Get scan IDs at which a source is partly excluded (by time):
         if logical(parameter.opt.options.sour_excl_start(iSource2BeExcl)) % If parameter.opt.options.sour_excl_start ~= 0
             
-            exclSourcesInd_byTime_q = exclSourcesInd_byTime_q | (scansToExcludedSources_q & (([scan.mjd] >= parameter.opt.options.sour_excl_start(iSource2BeExcl)) & ([scan.mjd]<=parameter.opt.options.sour_excl_end(iSource2BeExcl))));
-            exclSourcesInd_q(iSource2BeExcl) = [];
-            
-            exclSourcesInd_byTime_s = exclSourcesInd_byTime_s | (scansToExcludedSources_s & (([scan.mjd] >= parameter.opt.options.sour_excl_start(iSource2BeExcl)) & ([scan.mjd]<=parameter.opt.options.sour_excl_end(iSource2BeExcl))));
-            exclSourcesInd_s(iSource2BeExcl) = [];
+            if ~isempty(allSourceNames_q) && (sum(strcmp(allSourceNames_q, strtrim(parameter.opt.options.sour_excl(iSource2BeExcl,:)))) > 0)
+                exclSourcesInd_byTime_q = exclSourcesInd_byTime_q | (scansToExcludedSources_q & (([scan.mjd] >= parameter.opt.options.sour_excl_start(iSource2BeExcl)) & ([scan.mjd]<=parameter.opt.options.sour_excl_end(iSource2BeExcl))));
+                exclSourcesInd_q(iSource2BeExcl) = [];
+            end
+            if ~isempty(allSourceNames_s) && (sum(strcmp(allSourceNames_s, strtrim(parameter.opt.options.sour_excl(iSource2BeExcl,:)))) > 0)
+                exclSourcesInd_byTime_s = exclSourcesInd_byTime_s | (scansToExcludedSources_s & (([scan.mjd] >= parameter.opt.options.sour_excl_start(iSource2BeExcl)) & ([scan.mjd]<=parameter.opt.options.sour_excl_end(iSource2BeExcl))));
+                exclSourcesInd_s(iSource2BeExcl) = [];
+            end
         end
     end
 end
@@ -288,6 +292,9 @@ sum_del_outliers = 0;
 if parameter.outlier.flag_remove_outlier
     if ~isempty(parameter.outlier.obs2remove)
         n_outlier = length(parameter.outlier.obs2remove); % Number of outliers 
+        if ~isfield(parameter.outlier.obs2remove,'sou')
+            parameter.outlier.obs2remove(1).sou = '';
+        end
         
         for iOutlier = 1 : n_outlier
             
@@ -297,26 +304,37 @@ if parameter.outlier.flag_remove_outlier
 
             % get scan of cur outlier (the one which is close by 1/10 second!)
             curScanLog = abs([scan.mjd] - parameter.outlier.obs2remove(iOutlier).mjd) < (oneSecInDays/10);
-
+            curSouLog = parameter.outlier.obs2remove(iOutlier).sou;
+            
             % Check, if only one scan was found!
             % - If more than one scan was found by matching the scan reference times, the stations have to be considered in addition
             flag_found_scan = true; 
             if sum(curScanLog) > 1 % More than one scan found?
                 curScanLog_ids = find(curScanLog);
                 flag_found_scan = false;
-                % Check stations in scan:
-                for i_scan = 1 : sum(curScanLog)
-                    scan_id = curScanLog_ids(i_scan);
-                    stat_ids_in_scan = unique([scan(scan_id).obs.i1, scan(scan_id).obs.i2]);
-                    if ( ismember(curStatInd(1), stat_ids_in_scan) && ismember(curStatInd(2), stat_ids_in_scan) )
-                       flag_found_scan = true; 
-                       break
+                if isempty(curSouLog) % for old outlier files (without source names)
+                    % Check stations in scan:
+                    for i_scan = 1 : sum(curScanLog)
+                        scan_id = curScanLog_ids(i_scan);
+                        stat_ids_in_scan = unique([scan(scan_id).obs.i1, scan(scan_id).obs.i2]);
+                        if ( ismember(curStatInd(1), stat_ids_in_scan) && ismember(curStatInd(2), stat_ids_in_scan) )
+                           flag_found_scan = true; 
+                           break
+                        end
                     end
-                end
-                if ~flag_found_scan % No observation with the current baseline found in the considered scans
-                    fprintf('WARNING (outlier removal in cleanScan.m): No observation on the baseline %s - %s found at epoch %s!\n', parameter.outlier.obs2remove(iOutlier).sta1, parameter.outlier.obs2remove(iOutlier).sta2, mjd2datestr(parameter.outlier.obs2remove(iOutlier).mjd) )
-                else
-                    cur_scan_id = scan_id;
+                    if ~flag_found_scan % No observation with the current baseline found in the considered scans
+                        fprintf('WARNING (outlier removal in cleanScan.m): No observation on the baseline %s - %s found at epoch %s!\n', parameter.outlier.obs2remove(iOutlier).sta1, parameter.outlier.obs2remove(iOutlier).sta2, mjd2datestr(parameter.outlier.obs2remove(iOutlier).mjd) )
+                    else
+                        cur_scan_id = scan_id;
+                    end
+                else % new outlier files with source names
+                    for i_scan = 1:size(curScanLog_ids,2)
+                       scan_id = curScanLog_ids(i_scan);
+                       if strcmp (allSourceNames_q(scan(scan_id).iso),curSouLog)
+                            cur_scan_id = scan_id;
+                            flag_found_scan = true; 
+                       end
+                    end
                 end
             else
                 cur_scan_id = find(curScanLog);

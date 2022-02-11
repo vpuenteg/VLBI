@@ -41,10 +41,13 @@
 %   19 Jun 2014 by Hana Krasna: sources can be estimated in vie_lsm with NNR condition
 %   05 May 2017 by A. Hellerschmied: - general revision
 %                                    - Satellite coordinate estimates considered
+%   28 Oct 2020 by Johannes Boehm: the values of the first clock solution
+%   were wrong in x_, if clock breaks were in the session; this was
+%   corrected
 % ************************************************************************
-function [x_] = splitx(x, first_solution, mi, na, sum_dj, n_, mjd0, mjd1, t, T, opt, antenna, ns_q, nso, tso, ess, ns_s, number_pwlo_per_sat)
+function [x_] = splitx(x, first_solution, mi, na, sum_dj, n_, mjd0, mjd1, t, T, opt, antenna, ns_q, nso, tso, ess, ns_s, number_pwlo_per_sat, ebsl)
 
-
+global c
 
 % -------------------------------------------------------------------------
 % DIVIDING THE VECTOR X
@@ -66,6 +69,7 @@ x_.units.qclk_first_mjd     = 'epochs of the first scan, break if any, last scan
 
 if opt.first == 1 
     counti = 0; countj = na-1; countk = 2*(na-1);
+    
     for istat = 1 : na
         if istat ~= first_solution.ref_st
             if opt.firstclock == 0 || opt.firstclock == 1 || opt.firstclock == 2
@@ -75,15 +79,28 @@ if opt.first == 1
                     x_.pwclk(istat).first_val(k,:) = first_solution.clk_val(counti,:); % First clock functions offsets [cm]
                     x_.pwclk(istat).first_mx(k,:) = first_solution.clk_mx(counti,:); % formal errors of clock offsets [cm]
                 end
+                countj = countj + length(first_solution.breaks(istat).clk) - 2;
+                countk = countk + length(first_solution.breaks(istat).clk) - 2;
             end
-            if opt.firstclock == 1 || opt.firstclock == 2
+        end
+    end
+            
+    for istat = 1 : na
+        if istat ~= first_solution.ref_st
+             if opt.firstclock == 1 || opt.firstclock == 2
                 x_.rclk(istat).first_mjd = first_solution.breaks(istat).clk; % First clock functions offsets' epochs [mjd]
                 for k = 1 : length(first_solution.breaks(istat).clk) - 1
                     countj = countj + 1;
                     x_.rclk(istat).first_val(k,:) = first_solution.clk_val(countj,:); % First clock functions rates [cm/day]
                     x_.rclk(istat).first_mx(k,:) = first_solution.clk_mx(countj,:); % formal errors of clock rates
                 end
+                countk = countk + length(first_solution.breaks(istat).clk) - 2;
             end
+        end
+    end
+            
+    for istat = 1 : na
+        if istat ~= first_solution.ref_st
             if opt.firstclock == 2
                 x_.qclk(istat).first_mjd = first_solution.breaks(istat).clk; % First clock functions offsets' epochs [mjd]
                 for k = 1 : length(first_solution.breaks(istat).clk) - 1
@@ -94,7 +111,8 @@ if opt.first == 1
             end
         end
     end
-end
+    
+end 
 
 % Units of the estimated CPWLO clock parameters from main LS solution
 x_.units.pwclk_val = 'from main LS: CPWLO of clocks in cm';
@@ -431,6 +449,8 @@ for istat = 1:na
 end
 
 
+
+
 % -------------------------------------------------------------------------
 % Satellite coordinate offsets (PWL) 
 % -------------------------------------------------------------------------
@@ -524,6 +544,61 @@ if opt.pw_sat == 1
     end % for i_sat = 1 : ns_s
 end
 
+
+x_.units.scale = 'correction to the scale [ppb]';
+x_.scale.col = []; %[-]
+x_.scale.val = []; %[-]
+x_.scale.mx = []; %[-]
+x_.scale.mjd = []; %[-]
+
+x_.units.bdclko = 'baseline-dependent clock offset [cm]';
+x_.bdclko.val = []; % cm
+x_.bdclko.mx = [];
+x_.bdclko.mjd = [];
+x_.bdclko.col = [];
+x_.bdclko.st1 = [];
+x_.bdclko.st2 = [];
+x_.bdclko.namest1 = [''];
+x_.bdclko.namest2 = [''];
+
+% Correction to the scale factor
+if opt.est_scale==1
+    if ess==1
+        x_.scale.val = x(sum_dj(20)) /c/100 *1e9; %[ppb]
+        x_.scale.mx = mi(sum_dj(20)) /c/100 *1e9; %[ppb]
+        x_.scale.col = sum_dj(20);
+        x_.scale.mjd = ceil(mjd1); % mjd1 : midnight
+    else
+        x_.scale.col = sum_dj(20);
+        x_.scale.mjd = ceil(mjd1); % mjd1 : midnight
+    end
+end
+
+% Baseline-dependent clock offset
+if opt.est_bdco==1
+    nbas = sum_dj(21) - sum_dj(20);
+    if ess==1
+        for i=1:nbas
+            x_.bdclko(i).val = x(sum_dj(20)+i); % cm
+            x_.bdclko(i).mx = mi(sum_dj(20)+i);
+            x_.bdclko(i).col = sum_dj(20)+i;
+            x_.bdclko(i).st1 = ebsl(i,1);
+            x_.bdclko(i).st2 = ebsl(i,2);
+            x_.bdclko(i).namest1 = antenna(ebsl(i,1)).name;
+            x_.bdclko(i).namest2 = antenna(ebsl(i,2)).name;
+            x_.bdclko(i).mjd = ceil(mjd1); 
+        end
+    else
+        for i=1:nbas
+            x_.bdclko(i).col = sum_dj(20)+i;
+        end
+    end
+end
+
+    
+    
+    
+end
 
 
 

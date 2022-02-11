@@ -44,7 +44,7 @@ fprintf('Loading VieVSCrf.txt (BACKUP)\n\n')
 
 fid=fopen(vievsCrfFile);
 % get data from file
-data=textscan(fid, ' %8s %f %f %f %03s %f %f %f %f %17c %f', 'commentstyle', '*');
+data=textscan(fid, '%8s %f %f %f %03s %f %f %f %f %19c %f', 'commentstyle', '*');
 fclose(fid);
 
 
@@ -68,6 +68,10 @@ for iSource=1:nSources
         signum=-1;
     else
         signum=1;
+        if data{6}(iSource)<0 % consider format variant where sdd=0 and minus sign is written to mm
+           signum=-1;
+           data{6}(iSource)=data{6}(iSource)*signum;
+        end
     end
 
     source(iSource).vievsCrf.de=signum*...
@@ -96,6 +100,7 @@ end
 fid=fopen(IVSnamesFile);
 IVSnames_raw=textscan(fid, '%8s %*2s %16s %*2s %10s %*2s %8s %16s %2f %*1s %2f %*1s %9.7f %*2s %1s %2f %*1s %2f %*1s %9.7f %*[^\n]', 'whitespace','', 'commentstyle', '#');
 IVSnames.IVSname = IVSnames_raw{1,1};
+IVSnames.designation = IVSnames_raw{1,2};
 IVSnames.IERSname = IVSnames_raw{1,4};
 for i=1:length(IVSnames.IERSname)
     if strcmp(IVSnames.IERSname(i),'-       ')
@@ -121,6 +126,7 @@ for iSource=1:nSources
     indCurSoInTransl=find(curIVSnameInIERStable);
     if ~isempty(indCurSoInTransl)
         source(iSource).IERSname=char(IVSnames.IERSname(indCurSoInTransl));  
+        source(iSource).designation=['ICRF ' char(IVSnames.designation(indCurSoInTransl))];
     end
     
     % if IVS name differs from IERS name or is missing in the Goddard
@@ -128,11 +134,11 @@ for iSource=1:nSources
     if strcmp(curIVSname,source(iSource).IERSname)==0
         if source(iSource).IERSname == '        '
             iIERS = iIERS+1;
-            cIERS = num2str(iIERS,'%04.0f');
+            cIERS = num2str(iIERS,'%05.0f');
             
-            fprintf('No IERS name found in IVS_SrcNamesTable.txt for %s. id(%1.0f) \nAt the moment the IERS name VIE_%04.0f will be written to supersourcefile.\n\n',...
-                curIVSname,iSource,iIERS);
-            source(iSource).IERSname = ['VIE_' cIERS];
+%             fprintf('No IERS name found in IVS_SrcNamesTable.txt for %s. id(%1.0f) \nAt the moment the IERS name VIE_%04.0f will be written to supersourcefile.\n\n',...
+%                 curIVSname,iSource,iIERS);
+            source(iSource).IERSname = ['VIE' cIERS];
         else
 %             fprintf('source(%1.0f).IVSname: %s \nsource(%1.0f).IERSname: %c%c%c%c%c%c%c%c \n\n',...
 %                 iSource, curIVSname, iSource, source(iSource).IERSname);
@@ -192,7 +198,7 @@ clear GSFC2015b_raw GSFC2015bFile
 fclose(fid);
 
 % write info about translation table
-fprintf('Compare GSFC2015b with the VieVSCRF backup:\n');
+fprintf('Compare GSFC2015b with the VieVSCRF backup.\n');
 
     %##############################
 for iSource = 1:size(GSFC2015b.IVSname,1)
@@ -254,7 +260,7 @@ for k=1:size(data{1},1)
         % one of the found sources
         curIndInSourceStruct=indexInSourceStruct(iFoundIndices);
         % names
-        source(curIndInSourceStruct).designation=data{1}(k,:);
+%         source(curIndInSourceStruct).designation=data{1}(k,:);
         % defining source or not
         if strcmp(data{2}(k,11), 'D')
             source(curIndInSourceStruct).icrf2.defining=1;
@@ -348,7 +354,7 @@ for k=1:size(data{1},1)
         curIndInSourceStruct=indexInSourceStruct(iFoundIndices);
         
         % names
-        source(curIndInSourceStruct).designation=data{1}(k,:);
+%         source(curIndInSourceStruct).designation=data{1}(k,:);
 
         % VCS source is never defining
         source(curIndInSourceStruct).icrf2.defining=0;

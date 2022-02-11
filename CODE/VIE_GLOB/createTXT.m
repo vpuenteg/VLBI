@@ -44,11 +44,25 @@ end
 
 fid=fopen([paths.path_out '_ESTIMATES/' paths.out '/glob_results_' paths.L2 '.txt'],'wt');
 
+fprintf(fid,' %% Parameterisation \n');
+fprintf(fid,'DIRIN:  %s \n',paths.L2);
+fprintf(fid,'DIROUT: %s \n',paths.out);
+fprintf(fid,'TRF datum: %s \n',paths.datumsta);
+fprintf(fid,'TRF reduced ant: %s \n',paths.antred);
+fprintf(fid,'TRF constant vel: %s \n',paths.velconst);
+fprintf(fid,'TRF velocity ties: %s \n',paths.velties);
+fprintf(fid,'TRF discontinuity: %s \n',paths.discont);
+fprintf(fid,'CRF datum: %s \n',paths.datumsou);
+fprintf(fid,'CRF fixed sou: %s \n',paths.fixedsou);
+fprintf(fid,'CRF reduced sou: %s \n',paths.soured);
+
 fprintf(fid,' %% Sessions in the solution \n');
-fprintf(fid,'%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n',ses_time');
+for i=1:size(ses_time,2)
+    fprintf(fid,'%s   \n',ses_time{i});
+end
 
 fprintf(fid,'\n %% Number of sessions in the global adjustment\n');
-lse=size(globsol.sessions,1);
+lse=size(globsol.sessions,2);
 fprintf(fid,'%1.0f\n',lse);
 
 fprintf(fid,'\n %% Maximal RMS of the sessions in the solution\n');
@@ -57,8 +71,8 @@ maxRMS=globsol.maxRMS;
 fprintf(fid,'%3.2f\n',maxRMS);
 
 fprintf(fid,'\n %% Sessions which were excluded from the solution (RMS > %3.2f) \n',maxRMS);
-for i=1:size(badses,1)
-    fprintf(fid,'%c%c%c%c%c%c%c%c%c%c%c%c%c%c      %10.2f\n',badses(i,:),badses_mo(i)');
+for i=1:size(badses,2)
+	fprintf(fid,'%s      %10.2f\n',badses{i},badses_mo(i)');
 end
 
 
@@ -106,7 +120,7 @@ fprintf(fid,'\n\n\n %% Corrections to source coordinates and formal errors: RA i
 fprintf(fid,'\n %% source            RA          De            mRA         mDe \n');
 
 if globsol.source.id==1
-    [refname_s,ind]=sortrows(globsol.source.refname.IERS);
+    [refname_s,ind]=sortrows(globsol.source.refname.IVS);
     a = char(refname_s);
     drade = globsol.source.drade(ind,:);
     sigma_rade = globsol.source.sigma_rade(ind,:);

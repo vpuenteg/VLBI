@@ -197,6 +197,7 @@ try
             set(handles.radiobutton_parameters_troposphere_raytr, 'Value', 0)
             
             % set en/disable
+            set(handles.radiobutton_parameters_troposphere_zhd_no, 'Enable', 'on')
             set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Enable', 'on')
             set(handles.radiobutton_parameters_troposphere_zhd_VMF3, 'Enable', 'on')
             set(handles.radiobutton_parameters_troposphere_zhd_VMF1, 'Enable', 'on')
@@ -224,6 +225,7 @@ try
             set(handles.radiobutton_parameters_troposphere_raytr, 'Value', 1)
             
             % set en/disable
+            set(handles.radiobutton_parameters_troposphere_zhd_no, 'Enable', 'off')
             set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Enable', 'off')
             set(handles.radiobutton_parameters_troposphere_zhd_VMF3, 'Enable', 'off')
             set(handles.radiobutton_parameters_troposphere_zhd_VMF1, 'Enable', 'off')
@@ -250,6 +252,7 @@ try
 catch
     
     % set en/disable
+    set(handles.radiobutton_parameters_troposphere_zhd_no, 'Enable', 'on')
     set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Enable', 'on')
     set(handles.radiobutton_parameters_troposphere_zhd_VMF3, 'Enable', 'on')
     set(handles.radiobutton_parameters_troposphere_zhd_VMF1, 'Enable', 'on')
@@ -380,6 +383,11 @@ set(handles.checkbox_parameters_eop_models_inclAPrioriNutOffs, 'Value', paramete
 
 % interpolation
 set(handles.radiobutton_parameters_eop_interp_lin, 'Value', parameter.vie_mod.linear)
+if isfield(parameter.vie_mod,'linear48h')
+    set(handles.checkbox_parameters_eop_interp_lin48h, 'Value', parameter.vie_mod.linear48h)
+else
+    set(handles.checkbox_parameters_eop_interp_lin48h, 'Value', 0)
+end
 set(handles.radiobutton_parameters_eop_interp_lag, 'Value', ~parameter.vie_mod.linear)
 
 % tidal UT
@@ -593,6 +601,8 @@ end
 % zenith delay
 try
     switch parameter.vie_init.zhd
+        case 'no'
+            set(handles.radiobutton_parameters_troposphere_zhd_no, 'Value', 1)
         case 'in situ'
             set(handles.radiobutton_parameters_troposphere_zhd_fromInSitu, 'Value', 1)
         case 'vmf3'
@@ -830,6 +840,34 @@ else % clock should be estimated
         snxState='off';
     end
 end
+
+% set baseline-dependent clock offsets
+if isfield(parameter.lsmopt, 'est_bdco')
+    if parameter.lsmopt.est_bdco==1
+        set(handles.checkbox_estimation_leastSquares_clocksBasDepOffset, 'Value', 1);
+        set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'on')
+        set(handles.radiobutton_estimation_leastSquares_basdepClockoff_automatic, 'Enable', 'on')
+        set(handles.edit_estimation_leastSquares_clockBasDepO_minNobs, 'Enable', 'on');
+        set(handles.text403, 'Enable', 'on');
+        set(handles.text404, 'Enable', 'on');
+        if parameter.lsmopt.bdco_fromOPT
+            set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Value',1);
+        else
+            set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Value',0);
+            set(handles.edit_estimation_leastSquares_clockBasDepO_minNobs, 'String', num2str(parameter.lsmopt.bdco_minobs));
+        end
+    else
+        set(handles.checkbox_estimation_leastSquares_clocksBasDepOffset, 'Value', 0);
+    end
+else
+    set(handles.checkbox_estimation_leastSquares_clocksBasDepOffset, 'Value', 0);
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_OPT, 'Enable', 'off')
+    set(handles.radiobutton_estimation_leastSquares_basdepClockoff_automatic, 'Enable', 'off')
+    set(handles.edit_estimation_leastSquares_clockBasDepO_minNobs, 'Enable', 'off');
+    set(handles.text403, 'Enable', 'off');
+    set(handles.text404, 'Enable', 'off');
+end
+
 
 set(handles.text_run_sinex_clockParam, 'Enable', snxState)
 set(handles.radiobutton_run_sinex_clockParam_incl, 'Enable', 'off') % is never written to SINEX

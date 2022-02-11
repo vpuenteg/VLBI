@@ -137,15 +137,21 @@ for pl=1:size(process_list,1)
     files.scan=['../DATA/LEVEL3/', subfolder, '/', process_list(pl,6:end), '_scan.mat'];
     % x_ --> later, is only loaded when parameters were estimated!
     % opt_ --> later, is only loaded when parameters were estimated!
-    files.N_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/N_sinex_', process_list(pl,6:end), '.mat'];
-    files.b_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/b_sinex_', process_list(pl,6:end), '.mat'];
-    files.col_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/col_sinex_', process_list(pl,6:end), '.mat'];
+    if nargin>=7
+        N_sinex = varargin{6};
+        b_sinex = varargin{7};
+        col_sinex = varargin{8};
+    else
+        files.N_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/N_sinex_', process_list(pl,6:end), '.mat'];
+        files.b_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/b_sinex_', process_list(pl,6:end), '.mat'];
+        files.col_sinex=['../DATA/LEVEL3/', subfolder, '/SINEX/col_sinex_', process_list(pl,6:end), '.mat'];
+    end
     files.parameter=['../DATA/LEVEL3/', subfolder, '/', process_list(pl,6:end), '_parameter.mat'];
     files.antenna=['../DATA/LEVEL3/', subfolder, '/', process_list(pl,6:end), '_antenna.mat'];
     files.sources=['../DATA/LEVEL3/', subfolder, '/', process_list(pl,6:end), '_sources.mat'];
     
     snxFile=['../DATA/SNX/', subfolder, process_list(pl,6:end), suffix, '.snx'];
-    files.superstation=['../TRF/superstation.mat'];
+    files.superstation=('../TRF/superstation.mat');
     
     
     % check if SNX Folder exist
@@ -323,7 +329,7 @@ for pl=1:size(process_list,1)
     blockName='FILE/REFERENCE';
 
     infoType={'DESCRIPTION', 'OUTPUT', 'CONTACT', 'SOFTWARE'};
-    info={'Vienna University of Technology', 'LEVEL3 output of Vienna VLBI Software', [firstname, ' ', lastname, ' <',email, '>'], 'VieVS - Vienna VLBI Software'};
+    info={'TU Wien', 'LEVEL3 output of Vienna VLBI Software', [firstname, ' ', lastname, ' <',email, '>'], 'VieVS - Vienna VLBI Software'};
     frBlock=[infoType; info];
 
     %write data
@@ -339,6 +345,7 @@ for pl=1:size(process_list,1)
     %comment={'Constraints for EOP are always relative.'};
     
     if strcmp(parameter.vie_init.zhd,'in situ'); zhd=[' b) use ' parameter.data_type ' file content'];
+    elseif strcmp(parameter.vie_init.zhd,'no'); zhd=' c) other (no)';
     elseif strcmp(parameter.vie_init.zhd,'vmf3'); zhd=' c) other (VMF3)';
     elseif strcmp(parameter.vie_init.zhd,'vmf1'); zhd=' c) other (VMF1)';
     elseif strcmp(parameter.vie_init.zhd,'gpt3'); zhd=' c) other (GPT3 function)';
@@ -427,7 +434,11 @@ for pl=1:size(process_list,1)
     if parameter.lsmopt.pw_clk~=0
         clk_int=[' with ' num2str(parameter.lsmopt.int_clk) ' min interval and constraints ' num2str(parameter.lsmopt.coef_clk) ' cm after ' num2str(parameter.lsmopt.int_clk) ' min' ];
     end
-    
+    if isfield(parameter.lsmopt, 'bdco_nrlist')
+        bdco=num2str(size(parameter.lsmopt.bdco_nrlist,1));
+    else
+        bdco = '0';
+    end
     if parameter.lsmopt.pw_zwd==1
         zwd=[' zenith wet delay: ' num2str(parameter.lsmopt.int_zwd) ' min offsets with rel. constr. ' num2str(parameter.lsmopt.coef_zwd) ' cm after '  num2str(parameter.lsmopt.int_zwd) ' min' ];
     else
@@ -510,6 +521,7 @@ for pl=1:size(process_list,1)
         '9.1 Clocks';
         clk;
         clk_int;
+        [' baseline dependent clock offsets: ' bdco ' baselines'];
         '9.2 Atmospheres';
         ' b) other: piece-wise linear function:';
         zwd;
@@ -1129,12 +1141,12 @@ for pl=1:size(process_list,1)
     
     else %if writing estimates was not chosen in gui
         % only calculate a priori values for a priori block
-
+        cpsd_all = cPostSeismDeform(midmjd,antenna);
         for k=1:numStat % hana
             %                  coordx   +     vx      * (  mean scan mjd - itrf epoch mjd )/ diff(mjd)->years                                
-            antenna(k).aprX=antenna(k).x+antenna(k).vx*(midmjd-antenna(k).epoch)/365.25;
-            antenna(k).aprY=antenna(k).y+antenna(k).vy*(midmjd-antenna(k).epoch)/365.25;
-            antenna(k).aprZ=antenna(k).z+antenna(k).vz*(midmjd-antenna(k).epoch)/365.25;
+                antenna(k).aprX=antenna(k).x+antenna(k).vx*(midmjd-antenna(k).epoch)/365.25 + cpsd_all(1,1,k);
+                antenna(k).aprY=antenna(k).y+antenna(k).vy*(midmjd-antenna(k).epoch)/365.25 + cpsd_all(2,1,k);
+                antenna(k).aprZ=antenna(k).z+antenna(k).vz*(midmjd-antenna(k).epoch)/365.25 + cpsd_all(3,1,k);
         end
 
     end
